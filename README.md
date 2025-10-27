@@ -1,131 +1,112 @@
--- RayField-like LocalScript (use apenas no SEU jogo / ambiente de desenvolvimento)
--- Coloque este LocalScript em StarterPlayer > StarterPlayerScripts
+-- RayField-lite atualizado com função "Madeira Infinita" (LOCAL)
+-- Use apenas no SEU jogo / ambiente de desenvolvimento
+-- Coloque em StarterPlayer > StarterPlayerScripts
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
--- Configs
+-- ================= Configurações =================
 local INFINITE_JUMP_ENABLED = false
 local FLY_ENABLED = false
 local ESP_ENABLED = false
+local MADEIRA_ENABLED = false -- estado da madeira infinita (toggle pela tecla F)
 
-local FLY_SPEED = 60 -- velocidade do voo (ajuste)
-local MOBILE_BUTTON_SIZE = UDim2.new(0,100,0,60)
+local FLY_SPEED = 60
+local SPAWN_RATE_MADEIRA = 0.12   -- segundos entre cada peça de madeira
+local MADEIRA_LIFETIME = 12       -- tempo antes de destruir cada peça
+local MADEIRA_SIZE = Vector3.new(2,2,0.5)
+-- 50 cm = 0.5 metros; 1 stud ≈ 0.28m -> 0.5m ≈ 1.8 studs
+local DIST_FRONT_STUDS = 1.8      -- distância à frente do jogador para spawn (≈50 cm)
+local MAX_MADEIRA_LOCAL = 200     -- limite local para evitar travar o cliente
+
+-- =================================================
 
 -- util
 local function isMobile()
     return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 end
 
--- cria GUI minimalista
+-- GUI (nome do painel = "os brabo")
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "RayFieldLite"
+screenGui.Name = "os brabo"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0,240,0,140)
+frame.Size = UDim2.new(0,260,0,170)
 frame.Position = UDim2.new(0,10,0,10)
-frame.BackgroundTransparency = 0.25
-frame.BackgroundColor3 = Color3.fromRGB(20,20,20)
+frame.BackgroundTransparency = 0.2
+frame.BackgroundColor3 = Color3.fromRGB(18,18,18)
 frame.BorderSizePixel = 0
 frame.Parent = screenGui
 
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,0,0,28)
+title.Position = UDim2.new(0,0,0,0)
+title.BackgroundTransparency = 1
+title.Text = "os brabo"
+title.TextSize = 20
+title.Font = Enum.Font.SourceSansBold
+title.TextColor3 = Color3.fromRGB(255,200,80)
+title.Parent = frame
+
 local function makeToggle(text, y)
     local label = Instance.new("TextLabel", frame)
-    label.Position = UDim2.new(0,8,0,y)
-    label.Size = UDim2.new(0,140,0,30)
+    label.Position = UDim2.new(0,10,0,y)
+    label.Size = UDim2.new(0,150,0,28)
     label.BackgroundTransparency = 1
     label.Text = text
     label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextColor3 = Color3.new(1,1,1)
+    label.TextColor3 = Color3.fromRGB(230,230,230)
     label.Font = Enum.Font.SourceSans
-    label.TextSize = 18
+    label.TextSize = 16
 
     local button = Instance.new("TextButton", frame)
-    button.Position = UDim2.new(0,150,0,y)
-    button.Size = UDim2.new(0,70,0,30)
+    button.Position = UDim2.new(0,170,0,y)
+    button.Size = UDim2.new(0,70,0,28)
     button.Text = "OFF"
     button.Font = Enum.Font.SourceSansBold
-    button.TextSize = 16
-    button.BackgroundColor3 = Color3.fromRGB(60,60,60)
+    button.TextSize = 14
+    button.BackgroundColor3 = Color3.fromRGB(70,70,70)
     button.TextColor3 = Color3.fromRGB(255,180,80)
 
     return label, button
 end
 
-local _, btnInfinite = makeToggle("Infinite Jump", 8)
-local _, btnFly = makeToggle("Fly (mobile+desktop)", 46)
-local _, btnESP = makeToggle("ESP Players", 84)
+local _, btnInfinite = makeToggle("Infinite Jump", 36)
+local _, btnFly = makeToggle("Fly (mobile+desktop)", 72)
+local _, btnESP = makeToggle("ESP Players", 108)
 
--- status helpers
 local function setButtonState(btn, on)
     if on then
         btn.Text = "ON"
-        btn.BackgroundColor3 = Color3.fromRGB(30,110,30)
+        btn.BackgroundColor3 = Color3.fromRGB(30,130,30)
     else
         btn.Text = "OFF"
-        btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+        btn.BackgroundColor3 = Color3.fromRGB(70,70,70)
     end
 end
 
--- Infinite Jump Implementation
-local function enableInfiniteJump()
-    INFINITE_JUMP_ENABLED = true
-    setButtonState(btnInfinite, true)
-end
-local function disableInfiniteJump()
-    INFINITE_JUMP_ENABLED = false
-    setButtonState(btnInfinite, false)
-end
-
--- Força pular mesmo no ar quando tecla espaço for pressionada
+-- ============ Infinite Jump ============
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.Space and INFINITE_JUMP_ENABLED then
         local char = player.Character
         if char then
             local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                -- chama ChangeState para forçar pulo
-                hum:ChangeState(Enum.HumanoidStateType.Jumping)
-            end
+            if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
         end
     end
 end)
 
--- Também faz jump no touch (mobile) — ao tocar na tela uma vez
-if isMobile() then
-    UserInputService.TouchTap:Connect(function()
-        if INFINITE_JUMP_ENABLED then
-            local char = player.Character
-            if char then
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-            end
-        end
-    end)
-end
+local function enableInfiniteJump() INFINITE_JUMP_ENABLED = true; setButtonState(btnInfinite, true) end
+local function disableInfiniteJump() INFINITE_JUMP_ENABLED = false; setButtonState(btnInfinite, false) end
 
--- Fly Implementation (cliente; usa AssemblyLinearVelocity para suavidade)
-local flyVelocity = Vector3.new(0,0,0)
-local flyBodyEnabled = false
-
-local function enableFly()
-    FLY_ENABLED = true
-    setButtonState(btnFly, true)
-end
-local function disableFly()
-    FLY_ENABLED = false
-    setButtonState(btnFly, false)
-end
-
--- controles de teclado para voo
+-- ============ Fly (cliente) ============
 local moveDir = Vector3.new(0,0,0)
 local upDown = 0
 
@@ -156,34 +137,6 @@ UserInputService.InputEnded:Connect(function(input, gp)
     end
 end)
 
--- Mobile fly buttons
-local upButton, downButton
-local function createMobileFlyControls()
-    if not isMobile() then return end
-    upButton = Instance.new("TextButton", screenGui)
-    upButton.Size = MOBILE_BUTTON_SIZE
-    upButton.Position = UDim2.new(1,-110,1,-140)
-    upButton.Text = "Fly+"
-    upButton.BackgroundTransparency = 0.35
-
-    downButton = Instance.new("TextButton", screenGui)
-    downButton.Size = MOBILE_BUTTON_SIZE
-    downButton.Position = UDim2.new(1,-110,1,-70)
-    downButton.Text = "Fly-"
-    downButton.BackgroundTransparency = 0.35
-
-    upButton.TouchStarted:Connect(function() upDown = 1 end)
-    upButton.TouchEnded:Connect(function() upDown = 0 end)
-    downButton.TouchStarted:Connect(function() upDown = -1 end)
-    downButton.TouchEnded:Connect(function() upDown = 0 end)
-end
-
-local function destroyMobileFlyControls()
-    if upButton then upButton:Destroy(); upButton = nil end
-    if downButton then downButton:Destroy(); downButton = nil end
-end
-
--- aplica o movimento de voo localmente
 RunService.Heartbeat:Connect(function(dt)
     if not FLY_ENABLED then return end
     local char = player.Character
@@ -191,39 +144,35 @@ RunService.Heartbeat:Connect(function(dt)
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
-    -- calcula direção baseada na câmera
     local camCF = workspace.CurrentCamera.CFrame
     local forward = camCF.LookVector
-    forward = Vector3.new(forward.X, 0, forward.Z).Unit
-    if forward ~= forward then forward = Vector3.new(0,0,-1) end -- NaN guard
-
-    local right = camCF.RightVector
-    right = Vector3.new(right.X, 0, right.Z).Unit
-    if right ~= right then right = Vector3.new(1,0,0) end
+    forward = Vector3.new(forward.X, 0, forward.Z)
+    if forward.Magnitude > 0 then forward = forward.Unit end
+    local right = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z)
+    if right.Magnitude > 0 then right = right.Unit end
 
     local dir = (forward * moveDir.Z) + (right * moveDir.X) + Vector3.new(0, upDown, 0)
     if dir.Magnitude > 0 then
         local targetVel = dir.Unit * FLY_SPEED
-        -- suaviza a transição
         local currentVel = root.AssemblyLinearVelocity
         local newVel = currentVel:Lerp(targetVel, math.clamp(dt*8, 0, 1))
         root.AssemblyLinearVelocity = Vector3.new(newVel.X, newVel.Y, newVel.Z)
     else
-        -- desacelera gradualmente
         local currentVel = root.AssemblyLinearVelocity
         root.AssemblyLinearVelocity = currentVel:Lerp(Vector3.new(0,0,0), math.clamp(dt*3,0,1))
     end
 end)
 
--- ESP Implementation (usa Highlight para clareza)
-local highlights = {}
+local function enableFly() FLY_ENABLED = true; setButtonState(btnFly, true) end
+local function disableFly() FLY_ENABLED = false; setButtonState(btnFly, false) end
 
+-- ============ ESP (Highlight) ============
+local highlights = {}
 local function enableESP()
     ESP_ENABLED = true
     setButtonState(btnESP, true)
-    -- cria highlight para cada jogador (exceto você)
     for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= player and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
+        if pl ~= player and pl.Character then
             if not highlights[pl] then
                 local h = Instance.new("Highlight")
                 h.Adornee = pl.Character
@@ -245,12 +194,11 @@ local function disableESP()
     highlights = {}
 end
 
--- atualizar highlights quando jogadores entrarem/sairem/respawnarem
 Players.PlayerAdded:Connect(function(pl)
     pl.CharacterAdded:Connect(function(char)
         if ESP_ENABLED and pl ~= player then
             wait(0.1)
-            if char and char:FindFirstChildWhichIsA("BasePart") then
+            if char then
                 if not highlights[pl] then
                     local h = Instance.new("Highlight")
                     h.Adornee = char
@@ -270,29 +218,120 @@ Players.PlayerRemoving:Connect(function(pl)
     end
 end)
 
--- botões clicáveis
+-- ============ MADEIRA INFINITA (LOCAL) ============
+local madeiraParts = {}
+local spawnCoroutine = nil
+
+local function createMadeiraPart(spawnPos)
+    local part = Instance.new("Part")
+    part.Name = "Madeira"
+    part.Size = MADEIRA_SIZE
+    part.Position = spawnPos
+    part.Anchored = false
+    part.CanCollide = true
+    part.Material = Enum.Material.Wood
+    part.TopSurface = Enum.SurfaceType.Smooth
+    part.BottomSurface = Enum.SurfaceType.Smooth
+    part.Parent = workspace
+
+    -- aplica uma pequena velocidade para "cair"
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(1e5,1e5,1e5)
+    bv.Velocity = Vector3.new(0, -20, 0)
+    bv.Parent = part
+    delay(0.12, function() if bv and bv.Parent then bv:Destroy() end end)
+
+    -- rastreia localmente
+    table.insert(madeiraParts, part)
+    if #madeiraParts > MAX_MADEIRA_LOCAL then
+        local old = table.remove(madeiraParts, 1)
+        if old and old.Parent then old:Destroy() end
+    end
+
+    -- limpeza automática
+    delay(MADEIRA_LIFETIME, function()
+        if part and part.Parent then part:Destroy() end
+    end)
+end
+
+local function getSpawnPositionInFront()
+    local char = player.Character
+    local root = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart"))
+    local origin
+    local lookVector
+    if root then
+        origin = root.Position
+        -- usa a direção da câmera para ficar natural
+        lookVector = workspace.CurrentCamera and workspace.CurrentCamera.CFrame.LookVector or root.CFrame.LookVector
+    else
+        origin = workspace.CurrentCamera.CFrame.Position
+        lookVector = workspace.CurrentCamera.CFrame.LookVector
+    end
+    local spawnPos = origin + (Vector3.new(lookVector.X, 0, lookVector.Z).Unit * DIST_FRONT_STUDS) + Vector3.new(0, 2, 0)
+    -- pequeno jitter para espalhar
+    local jitter = Vector3.new((math.random()-0.5)*1, 0, (math.random()-0.5)*1)
+    return spawnPos + jitter
+end
+
+local function startMadeiraLoop()
+    if spawnCoroutine then return end
+    spawnCoroutine = true
+    spawn(function()
+        while spawnCoroutine do
+            if not MADEIRA_ENABLED then break end
+            local pos = getSpawnPositionInFront()
+            createMadeiraPart(pos)
+            wait(SPAWN_RATE_MADEIRA)
+        end
+        spawnCoroutine = nil
+    end)
+end
+
+local function stopMadeiraLoop()
+    spawnCoroutine = false
+end
+
+-- Toggle tecla F para ativar/desativar madeira infinita
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    -- tecla F = toggle madeira infinita
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.F then
+        MADEIRA_ENABLED = not MADEIRA_ENABLED
+        if MADEIRA_ENABLED then
+            startMadeiraLoop()
+            -- aviso rápido
+            local hint = Instance.new("Hint")
+            hint.Text = "Madeira infinita: ATIVADA"
+            hint.Parent = player:WaitForChild("PlayerGui")
+            delay(1.5, function() if hint and hint.Parent then hint:Destroy() end end)
+        else
+            stopMadeiraLoop()
+            local hint = Instance.new("Hint")
+            hint.Text = "Madeira infinita: DESATIVADA"
+            hint.Parent = player:WaitForChild("PlayerGui")
+            delay(1.2, function() if hint and hint.Parent then hint:Destroy() end end)
+        end
+    end
+end)
+
+-- ============ Botões GUI ============
 btnInfinite.MouseButton1Click:Connect(function()
     if INFINITE_JUMP_ENABLED then disableInfiniteJump() else enableInfiniteJump() end
 end)
 btnFly.MouseButton1Click:Connect(function()
-    if FLY_ENABLED then
-        disableFly()
-        destroyMobileFlyControls()
-    else
-        enableFly()
-        if isMobile() then createMobileFlyControls() end
-    end
+    if FLY_ENABLED then disableFly() else enableFly() end
 end)
 btnESP.MouseButton1Click:Connect(function()
     if ESP_ENABLED then disableESP() else enableESP() end
 end)
 
--- Ao spawnar, garante que mobile controls apareçam se Fly já ativado
-player.CharacterAdded:Connect(function()
-    if FLY_ENABLED and isMobile() then createMobileFlyControls() end
-end)
-
--- inicializa botões no estado OFF
+-- inicializa estados visuais
 setButtonState(btnInfinite, INFINITE_JUMP_ENABLED)
 setButtonState(btnFly, FLY_ENABLED)
 setButtonState(btnESP, ESP_ENABLED)
+
+-- garante criar controles mobile de fly ao spawn se necessário (simples)
+player.CharacterAdded:Connect(function()
+    -- nada extra por enquanto, apenas garante que futuras calls funcionem
+end)
